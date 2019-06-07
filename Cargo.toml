@@ -1,0 +1,7 @@
+[package]
+name = "shrek"
+version = "0.1.0"
+authors = ["k3yavi <asrivastava@cs.stonybrook.edu>"]
+edition = "2018"
+
+[dependencies]

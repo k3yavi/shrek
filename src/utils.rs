@@ -65,15 +65,19 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
     info!("Parsing {}", gfa2_file);
     let (u2, p2) = get_data(gfa2_file);
 
+    let mut diff = 0;
     for (id1, path1) in p1 {
         let len1 = get_lens(&u1, &path1);
 
         let path2 = p2.get(&id1).unwrap();
         let len2 = get_lens(&u2, &path2);
 
-        assert!(len1 == len2);
+        if len1 != len2 {
+            println!("{:?}: {}, {}", id1, len1, len2);
+            diff += 1;
+        }
     }
 
-    info!("All Done!!");
+    info!("All Done!! Diff = {}", diff);
     Ok(())
 }

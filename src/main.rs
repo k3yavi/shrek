@@ -11,6 +11,7 @@ extern crate log;
 extern crate lazy_static;
 
 use std::io;
+use std::fs::{OpenOptions};
 use std::io::Write;
 use std::sync::Arc;
 use bio::io::{fasta};
@@ -22,16 +23,18 @@ use debruijn::graph::*;
 use debruijn::compression::*;
 use debruijn::dna_string::{DnaString, DnaStringSlice};
 
-use boomphf::hashmap::BoomHashMap2;
+use boomphf::hashmap::{BoomHashMap2, NoKeyBoomHashMap};
 use rayon::prelude::*;
 
 mod utils;
 
 const MIN_KMERS: usize = 1;
+const MAX_WORKER: usize = 10;
 pub const MEM_SIZE: usize = 1;
 pub const STRANDED: bool = true;
+const U32_MAX: u32 = u32::max_value();
 pub const REPORT_ALL_KMER: bool = false;
-const MIN_SHARD_SEQUENCES: usize = 2000;
+const MIN_SHARD_SEQUENCES: usize = 31;
 
 type KmerType = kmer::Kmer31;
 type PmerType = debruijn::kmer::Kmer6;
@@ -127,6 +130,7 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
     let reader = fasta::Reader::from_file(fasta_file).unwrap();
 
     let mut seqs = Vec::new();
+    let mut seq_names = Vec::new();
     {
         // scope for reading data
         let mut transcript_counter = 0;
@@ -139,6 +143,7 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
             // Sequence
             let dna_string = DnaString::from_acgt_bytes_hashn(record.seq(), record.id().as_bytes ());
             seqs.push(dna_string);
+            seq_names.push( record.id().to_string() );
 
             transcript_counter += 1;
             if transcript_counter % 100 == 0 {
@@ -184,11 +189,100 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
     info!("Done separate de Bruijn graph construction");
     info!("Starting merging disjoint graphs");
     let dbg = merge_shard_dbgs(shard_dbgs);
+    let eq_classes = summarizer.get_eq_classes();
 
     info!("Graph merge complete");
-    dbg.to_gfa(gfa_file).expect("can't write gfa");
+    info!("Writing GFA !");
+    write_gfa(eq_classes, dbg, gfa_file, seqs, seq_names)
+        .expect("Can't write gfa");
 
-    info!("Finished Indexing !");
+    Ok(())
+}
+
+pub fn write_gfa( eq_classes: Vec<Vec<u32>>,
+                  dbg: DebruijnGraph<KmerType, u32>,
+                  gfa_file: &str,
+                  seqs: Vec<DnaString>,
+                  seq_names: Vec<String>)
+                  -> Result<(), io::Error> {
+    // writing S and L flags into the gfa
+    dbg.to_gfa(gfa_file)?;
+    info!("GFA: S and L tag written !");
+
+    let dbg_index;
+    {
+        let mut total_kmers = 0;
+        let kmer_length = KmerType::k();
+        for node in dbg.iter_nodes() {
+            total_kmers += node.len() - kmer_length + 1;
+        }
+
+        info!("Total {:?} kmers to process in dbg", total_kmers);
+        info!("Making mphf of kmers");
+        let mphf = boomphf::Mphf::from_chunked_iterator_parallel(1.7, &dbg, None, total_kmers, MAX_WORKER);
+
+        info!("Assigning offsets to kmers");
+        let mut node_and_offsets = Vec::with_capacity(total_kmers);
+        node_and_offsets.resize(total_kmers, (U32_MAX as u32, U32_MAX as u32));
+
+        for node in &dbg {
+            let node_id = node.node_id;
+
+            for (offset, kmer) in node.into_iter().enumerate() {
+                let index = match mphf.try_hash(&kmer) {
+                    None => panic!("can't find kmer"),
+                    Some(index) => index,
+                };
+
+                node_and_offsets[index as usize] = (node_id as u32, offset as u32);
+            }
+        }
+
+        info!("Done creating index");
+        dbg_index = NoKeyBoomHashMap::new_with_mphf(mphf, node_and_offsets);
+    }
+
+    let mut wtr = OpenOptions::new().append(true).open(gfa_file)?;
+
+    let mut path: String = "".to_string();
+    for (seq_index, seq) in seqs.into_iter().enumerate() {
+        let mut seq_len = seq.len();
+        let mut kmer_it = seq.iter_kmers::<KmerType>();
+
+        path.clear();
+        while let Some(kmer) = kmer_it.next() {
+            let (nid, offset) = dbg_index.get(&kmer).unwrap();
+            assert!(*offset == 0, "{}", *offset);
+
+            if path.is_empty() {
+                path = format!("{}+", nid);
+            } else {
+                path = format!("{},{}+", path, nid);
+            }
+
+            let node = dbg.get_node(*nid as usize);
+            let node_len = node.len();
+            if node_len >= seq_len { break; }
+
+            seq_len -= node_len;
+            let mut skip_kmers = node_len - KmerType::k() ;
+
+            while skip_kmers > 0 {
+                kmer_it.next();
+                skip_kmers -= 1;
+            }
+        } // end-while
+
+        writeln!(wtr, "P\t{}\t{}",
+                 seq_names.get(seq_index).unwrap(),
+                 path
+        )?;
+        //    println!("{:?}, {:?}, {}", node,
+        //             eq_classes[*node.data() as usize],
+        //             offset
+        //    );
+    }// end- seq for
+    info!("Done writing Path");
 
     Ok(())
 }

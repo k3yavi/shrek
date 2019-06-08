@@ -1,21 +1,22 @@
-use std::io;
-use std::fs::File;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io;
 use std::io::{BufRead, BufReader};
 
+use clap::ArgMatches;
 use debruijn::Mer;
-use clap::{ArgMatches};
+use log::info;
 
-use debruijn::dna_string::{DnaString};
+use debruijn::dna_string::DnaString;
 
-pub fn get_data(gfa_file: &str)
-                -> (HashMap<usize, String>, HashMap<String, String>){
+pub fn get_data(gfa_file: &str) -> (HashMap<usize, String>, HashMap<String, String>) {
     let f = BufReader::new(File::open(gfa_file).unwrap());
     let mut unitigs = HashMap::new();
     let mut path = HashMap::new();
 
     for line in f.lines() {
-        let toks: Vec<String> = line.expect("Unable to read line")
+        let toks: Vec<String> = line
+            .expect("Unable to read line")
             .trim()
             .split("\t")
             .map(|chunk| chunk.to_string())
@@ -33,15 +34,14 @@ pub fn get_data(gfa_file: &str)
                 let rpath = toks[2].clone();
                 path.insert(rname, rpath);
             }
-            _ => ()
+            _ => (),
         }
     }
 
-    return (unitigs, path)
+    return (unitigs, path);
 }
 
-pub fn get_lens(u1: &HashMap<usize, String>, path_seq: &String)
-                -> (Vec<String>, usize) {
+pub fn get_lens(u1: &HashMap<usize, String>, path_seq: &String) -> (Vec<String>, usize) {
     let mut seqs = Vec::new();
     let mut total_length = 30;
     for path in path_seq.trim().split(",") {
@@ -52,9 +52,9 @@ pub fn get_lens(u1: &HashMap<usize, String>, path_seq: &String)
 
         let seq = u1.get(&rid).unwrap();
         let seq_len = seq.len() - 30;
-        seqs.push( seq.clone() );
+        seqs.push(seq.clone());
         //println!("{:?} {:?}", rid, seq_len);
-        total_length += if seq_len>0  { seq_len } else { panic!() };
+        total_length += if seq_len > 0 { seq_len } else { panic!() };
     }
 
     (seqs, total_length)
@@ -62,10 +62,8 @@ pub fn get_lens(u1: &HashMap<usize, String>, path_seq: &String)
 
 pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
     // obtain reader or fail with error (via the unwrap method)
-    let gfa1_file = sub_m.values_of("gfa1").unwrap()
-        .next().unwrap();
-    let gfa2_file = sub_m.values_of("gfa2").unwrap()
-        .next().unwrap();
+    let gfa1_file = sub_m.values_of("gfa1").unwrap().next().unwrap();
+    let gfa2_file = sub_m.values_of("gfa2").unwrap().next().unwrap();
 
     info!("Parsing {}", gfa1_file);
     let (u1, p1) = get_data(gfa1_file);
@@ -93,24 +91,24 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
             println!("Overall: {:?} \n {:?} \n {:?}", id1, len1.len(), len2.len());
             //println!("Overall: {:?} \n {:?} \n {:?}", id1, len1, len2);
             in_diff += 1;
-            //break;
+        //break;
         } else {
             for i in 0..len1.len() {
                 let seq1 = DnaString::from_acgt_bytes_hashn(len1[i].as_bytes(), &[i as u8]);
                 let seq2 = DnaString::from_acgt_bytes_hashn(len2[i].as_bytes(), &[i as u8]);
-                if seq1 != seq2 &&
-                    seq1.rc() != seq2.rc() &&
-                    seq1 != seq2.rc() &&
-                    seq1.rc() != seq2 {
-                        in_diff += 1;
-                        println!("{:?} {}", seq1, len1[i].len());
-                        println!("{:?} {}", seq2.rc(), len2[i].len());
+                if seq1 != seq2 && seq1.rc() != seq2.rc() && seq1 != seq2.rc() && seq1.rc() != seq2
+                {
+                    in_diff += 1;
+                    println!("{:?} {}", seq1, len1[i].len());
+                    println!("{:?} {}", seq2.rc(), len2[i].len());
                 }
             }
         }
     }
 
-    info!("All Done!! Num Diff = {}/{}, In Diff = {}/{}", diff, p1_len, in_diff, p1_len);
+    info!(
+        "All Done!! Num Diff = {}/{}, In Diff = {}/{}",
+        diff, p1_len, in_diff, p1_len
+    );
     Ok(())
 }
-

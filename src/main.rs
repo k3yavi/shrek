@@ -1,29 +1,21 @@
-extern crate bio;
-extern crate clap;
-extern crate debruijn;
-extern crate boomphf;
-extern crate pretty_env_logger;
-
-#[macro_use]
-extern crate log;
-
-#[macro_use]
-extern crate lazy_static;
-
+use std::fs::OpenOptions;
 use std::io;
-use std::fs::{OpenOptions};
 use std::io::Write;
 use std::sync::Arc;
-use bio::io::{fasta};
+
+use bio::io::fasta;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
-use debruijn::*;
-use debruijn::filter::*;
-use debruijn::graph::*;
 use debruijn::compression::*;
 use debruijn::dna_string::{DnaString, DnaStringSlice};
+use debruijn::filter::*;
+use debruijn::graph::*;
+use debruijn::*;
 
 use boomphf::hashmap::{BoomHashMap2, NoKeyBoomHashMap};
+use lazy_static::lazy_static;
+use log::info;
+use pretty_env_logger;
 use rayon::prelude::*;
 
 mod utils;
@@ -74,7 +66,7 @@ fn assemble_shard<K: Kmer>(
     summarizer: &Arc<CountFilterEqClass<u32>>,
 ) -> BaseGraph<K, (EqClassIdType, u8)> {
     let filter_input: Vec<_> = shard_data
-        .into_iter()
+        .iter()
         .cloned()
         .map(|(_, seqid, string, exts, sentinel_id)| (string, exts, seqid, sentinel_id))
         .collect();
@@ -119,10 +111,12 @@ fn partition_contigs<'a, K: Kmer>(
 
             let mut sentinal_id = match msp_idx {
                 0 => 1,
-                _ if msp_idx == (num_msps-1) => 2,
+                _ if msp_idx == (num_msps - 1) => 2,
                 _ => 0,
             };
-            if num_msps == 1 { sentinal_id = 3; }
+            if num_msps == 1 {
+                sentinal_id = 3;
+            }
 
             bucket_slices.push((bucket_id, contig_id, slice, exts, sentinal_id));
         }
@@ -155,9 +149,9 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
             let record = result.unwrap();
 
             // Sequence
-            let dna_string = DnaString::from_acgt_bytes_hashn(record.seq(), record.id().as_bytes ());
+            let dna_string = DnaString::from_acgt_bytes_hashn(record.seq(), record.id().as_bytes());
             seqs.push(dna_string);
-            seq_names.push( record.id().to_string() );
+            seq_names.push(record.id().to_string());
 
             transcript_counter += 1;
             if transcript_counter % 100 == 0 {
@@ -197,7 +191,8 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
         .into_par_iter()
         .map_with(summarizer.clone(), |s, strings| {
             assemble_shard::<KmerType>(strings, s)
-        }).collect_into_vec(&mut shard_dbgs);
+        })
+        .collect_into_vec(&mut shard_dbgs);
 
     println!();
     //println!("{:?}", shard_dbgs);
@@ -210,18 +205,18 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
     //println!("{:?} {:?}", dbg, eq_classes);
     info!("Graph merge complete");
     info!("Writing GFA !");
-    write_gfa(eq_classes, dbg, gfa_file, seqs, seq_names)
-        .expect("Can't write gfa");
+    write_gfa(eq_classes, dbg, gfa_file, seqs, seq_names).expect("Can't write gfa");
 
     Ok(())
 }
 
-pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
-                  dbg: DebruijnGraph<KmerType, (u32, u8)>,
-                  gfa_file: &str,
-                  seqs: Vec<DnaString>,
-                  seq_names: Vec<String>)
-                   -> Result<(), io::Error> {
+pub fn write_gfa(
+    _eq_classes: Vec<Vec<u32>>,
+    dbg: DebruijnGraph<KmerType, (u32, u8)>,
+    gfa_file: &str,
+    seqs: Vec<DnaString>,
+    seq_names: Vec<String>,
+) -> Result<(), io::Error> {
     fn unitig_len(node: &Node<'_, KmerType, (u32, u8)>) -> String {
         format!("LN:{}", node.len())
     }
@@ -240,7 +235,8 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
 
         info!("Total {:?} kmers to process in dbg", total_kmers);
         info!("Making mphf of kmers");
-        let mphf = boomphf::Mphf::from_chunked_iterator_parallel(1.7, &dbg, None, total_kmers, MAX_WORKER);
+        let mphf =
+            boomphf::Mphf::from_chunked_iterator_parallel(1.7, &dbg, None, total_kmers, MAX_WORKER);
 
         info!("Assigning offsets to kmers");
         let mut node_and_offsets = Vec::with_capacity(total_kmers);
@@ -274,30 +270,36 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
         let debug = false;
         path.clear();
         while let Some(kmer) = kmer_it.next() {
-            if debug { println!("kmer: {:?}", kmer); }
+            if debug {
+                println!("kmer: {:?}", kmer);
+            }
             let mut is_kmer_rc = false;
             let kmer_rc = kmer.rc();
 
             let fwd_idx = match dbg_index.get(&kmer) {
                 Some((nid, offset)) => {
                     let node = dbg.get_node(*nid as usize);
-                    let seq = node
-                        .sequence()
-                        .get_kmer(*offset as usize);
-                    if kmer == seq { Some(node) } else { None }
-                },
+                    let seq = node.sequence().get_kmer(*offset as usize);
+                    if kmer == seq {
+                        Some(node)
+                    } else {
+                        None
+                    }
+                }
                 None => None,
             };
 
             let rev_idx = match dbg_index.get(&kmer_rc) {
                 Some((nid, offset)) => {
                     let node = dbg.get_node(*nid as usize);
-                    let seq = node
-                        .sequence()
-                        .rc()
-                        .get_kmer(*offset as usize);
-                    if kmer_rc == seq { is_kmer_rc = true; Some(node) } else { None }
-                },
+                    let seq = node.sequence().rc().get_kmer(*offset as usize);
+                    if kmer_rc == seq {
+                        is_kmer_rc = true;
+                        Some(node)
+                    } else {
+                        None
+                    }
+                }
                 None => None,
             };
 
@@ -311,7 +313,11 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
                 panic!("Neither fwd nor reverse kmer found");
             }
 
-            let node = if fwd_idx.is_some() { fwd_idx.unwrap() } else {rev_idx.unwrap()};
+            let node = if fwd_idx.is_some() {
+                fwd_idx.unwrap()
+            } else {
+                rev_idx.unwrap()
+            };
             let node_len = node.len();
             let node_sign = match is_kmer_rc {
                 true => "-",
@@ -323,10 +329,11 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
             match num_nodes {
                 1 => {
                     //ref_seq = seq.slice(coverage, coverage+node_len);
-                    if debug { println!("{:?}, {:?}", coverage,
-                                        coverage+node_len); }
+                    if debug {
+                        println!("{:?}, {:?}", coverage, coverage + node_len);
+                    }
                     coverage += node_len;
-                },
+                }
                 _ => {
                     let offset = KmerType::k() - 1;
                     //ref_seq = seq.slice(coverage - offset, coverage + node_len - offset);
@@ -337,7 +344,7 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
                     //             seq.len(), ref_seq, seq);
                     //}
                     coverage += node_len - offset;
-                },
+                }
             };
 
             //let found_seq = node.sequence();
@@ -354,7 +361,7 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
                 path = format!("{},{}{}", path, node.node_id, node_sign);
             }
 
-            let mut skip_kmers = node_len - KmerType::k() ;
+            let mut skip_kmers = node_len - KmerType::k();
             while skip_kmers > 0 {
                 kmer_it.next();
                 skip_kmers -= 1;
@@ -362,15 +369,12 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
         } // end-while
 
         let seq_name = seq_names.get(seq_index).unwrap();
-        writeln!(wtr, "P\t{}\t{}\t*",
-                 seq_name,
-                 path
-        )?;
+        writeln!(wtr, "P\t{}\t{}\t*", seq_name, path)?;
 
         //assert!(coverage == seq.len(),
         //        "didn't cover full transcript {}: len: {} covered: {}",
         //        seq_name, seq.len(), coverage);
-    }// end- seq for
+    } // end- seq for
     info!("Done writing Path");
 
     Ok(())
@@ -389,8 +393,9 @@ fn main() -> io::Result<()> {
                         .long("fasta")
                         .value_name("FILE")
                         .help("Txome/Genome Input fasta")
-                        .required (true),
-                ).arg(
+                        .required(true),
+                )
+                .arg(
                     Arg::with_name("gfa")
                         .short("g")
                         .long("gfa")
@@ -403,20 +408,22 @@ fn main() -> io::Result<()> {
             SubCommand::with_name("compare")
                 .arg(
                     Arg::with_name("gfa1")
-                        .short("g1")
+                        .short("1")
                         .long("gfa1")
                         .value_name("FILE")
                         .help("GFA1 to compare")
-                        .required (true),
-                ).arg(
+                        .required(true),
+                )
+                .arg(
                     Arg::with_name("gfa2")
-                        .short("g2")
+                        .short("2")
                         .long("gfa2")
                         .value_name("FILE")
                         .help("GFA2")
                         .required(true),
                 ),
-        ).get_matches();
+        )
+        .get_matches();
 
     // initializing logger
     pretty_env_logger::init_timed();
@@ -439,4 +446,3 @@ fn main() -> io::Result<()> {
 
     Ok(())
 }
-

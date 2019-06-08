@@ -14,7 +14,7 @@ use std::io;
 use std::io::Write;
 use std::sync::Arc;
 use bio::io::{fasta};
-use clap::{App, Arg};
+use clap::{App, Arg, ArgMatches, SubCommand};
 
 use debruijn::*;
 use debruijn::filter::*;
@@ -25,13 +25,15 @@ use debruijn::dna_string::{DnaString, DnaStringSlice};
 use boomphf::hashmap::BoomHashMap2;
 use rayon::prelude::*;
 
+mod utils;
+
 const MIN_KMERS: usize = 1;
 pub const MEM_SIZE: usize = 1;
 pub const STRANDED: bool = true;
 pub const REPORT_ALL_KMER: bool = false;
 const MIN_SHARD_SEQUENCES: usize = 2000;
 
-type KmerType = kmer::Kmer24;
+type KmerType = kmer::Kmer31;
 type PmerType = debruijn::kmer::Kmer6;
 lazy_static! {
     static ref PERM: Vec<usize> = {
@@ -113,36 +115,13 @@ fn partition_contigs<'a, K: Kmer>(
     bucket_slices
 }
 
-fn main() {
-    let matches = App::new("Shrek")
-        .version("1.0")
-        .author("Avi S. <asrivastava@cs.stonybrook.edu>")
-        .about("oh this is another one of those onion things !")
-        .arg(
-            Arg::with_name("fasta")
-                .short("f")
-                .long("fasta")
-                .value_name("FILE")
-                .help("Txome/Genome Input fasta")
-                .required (true),
-        ).arg(
-            Arg::with_name("index")
-                .short("i")
-                .long("index")
-                .value_name("FILE")
-                .help("Index of the reference")
-                .required(true),
-        ).get_matches();
-
-    // initializing logger
-    pretty_env_logger::init_timed();
-
+fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
     // obtain reader or fail with error (via the unwrap method)
-    let index_file = matches.values_of("index").unwrap().next().unwrap();
-    info!("Index will be created at: {}", index_file);
+    let gfa_file = sub_m.values_of("gfa").unwrap().next().unwrap();
+    info!("GFA will be created at: {}", gfa_file);
 
     // Gets a value for config if supplied by user
-    let fasta_file = matches.value_of("fasta").unwrap();
+    let fasta_file = sub_m.value_of("fasta").unwrap();
     info!("Path for reference FASTA: {}", fasta_file);
 
     let reader = fasta::Reader::from_file(fasta_file).unwrap();
@@ -158,7 +137,7 @@ fn main() {
             let record = result.unwrap();
 
             // Sequence
-            let dna_string = DnaString::from_acgt_bytes_hashn(record.seq(), record.id().as_bytes());
+            let dna_string = DnaString::from_acgt_bytes_hashn(record.seq(), record.id().as_bytes ());
             seqs.push(dna_string);
 
             transcript_counter += 1;
@@ -207,9 +186,73 @@ fn main() {
     let dbg = merge_shard_dbgs(shard_dbgs);
 
     info!("Graph merge complete");
-
-    //Set up the filter_kmer call based on the number of sequences.
-    //filter_kmers_callback(&seqs, index_file, &uhs, tgmap, gene_order);
+    dbg.to_gfa(gfa_file).expect("can't write gfa");
 
     info!("Finished Indexing !");
+
+    Ok(())
+}
+
+fn main() -> io::Result<()> {
+    let matches = App::new("Shrek")
+        .version("1.0")
+        .author("Avi S. <asrivastava@cs.stonybrook.edu>")
+        .about("oh this is another one of those onion things !")
+        .subcommand(
+            SubCommand::with_name("generate")
+                .arg(
+                    Arg::with_name("fasta")
+                        .short("f")
+                        .long("fasta")
+                        .value_name("FILE")
+                        .help("Txome/Genome Input fasta")
+                        .required (true),
+                ).arg(
+                    Arg::with_name("gfa")
+                        .short("g")
+                        .long("gfa")
+                        .value_name("FILE")
+                        .help("path to output gfa file")
+                        .required(true),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("compare")
+                .arg(
+                    Arg::with_name("gfa1")
+                        .short("g1")
+                        .long("gfa1")
+                        .value_name("FILE")
+                        .help("GFA1 to compare")
+                        .required (true),
+                ).arg(
+                    Arg::with_name("gfa2")
+                        .short("g2")
+                        .long("gfa2")
+                        .value_name("FILE")
+                        .help("GFA2")
+                        .required(true),
+                ),
+        ).get_matches();
+
+    // initializing logger
+    pretty_env_logger::init_timed();
+
+    match matches.subcommand_matches("generate") {
+        Some(sub_m) => {
+            let ret = generate(&sub_m);
+            return ret;
+        }
+        None => (),
+    };
+
+    match matches.subcommand_matches("compare") {
+        Some(sub_m) => {
+            let ret = utils::compare(&sub_m);
+            return ret;
+        }
+        None => (),
+    };
+
+    Ok(())
 }

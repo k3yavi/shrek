@@ -3,10 +3,11 @@ use std::fs::File;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 
+use debruijn::Mer;
 use clap::{ArgMatches};
 
 pub fn get_data(gfa_file: &str)
-                -> (HashMap<usize, usize>, HashMap<String, String>){
+                -> (HashMap<usize, String>, HashMap<String, String>){
     let f = BufReader::new(File::open(gfa_file).unwrap());
     let mut unitigs = HashMap::new();
     let mut path = HashMap::new();
@@ -22,7 +23,7 @@ pub fn get_data(gfa_file: &str)
         match rtype.as_str() {
             "S" => {
                 let rid: usize = toks[1].parse().unwrap();
-                let rseq: usize = toks[2].len();
+                let rseq: String = toks[2].clone();
                 unitigs.insert(rid, rseq);
             }
             "P" => {
@@ -37,22 +38,17 @@ pub fn get_data(gfa_file: &str)
     return (unitigs, path)
 }
 
-pub fn get_lens(u1: &HashMap<usize, usize>, path_seq: &String)
-                -> usize {
-    let mut total_len = 0;
-    let mut adjustment = 0;
+pub fn get_lens(u1: &HashMap<usize, String>, path_seq: &String)
+                -> Vec<String> {
+    let mut total_len = Vec::new();
     for path in path_seq.trim().split(",") {
         let rid: usize = path
             .trim_matches(|c| c == '-' || c == '+')
             .parse::<usize>()
             .unwrap();
 
-        adjustment += 1;
-        total_len += u1.get(&rid).unwrap();
+        total_len.push( u1.get(&rid).unwrap().clone() );
     }
-
-    adjustment -= 1;
-    total_len -= 30 * (adjustment);
 
     total_len
 }
@@ -71,19 +67,35 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
     let (u2, p2) = get_data(gfa2_file);
 
     let mut diff = 0;
+    let p1_len = p1.len();
     for (id1, path1) in p1 {
         let len1 = get_lens(&u1, &path1);
 
         let path2 = p2.get(&id1).unwrap();
         let len2 = get_lens(&u2, &path2);
 
-        if len1 != len2 {
-            println!("{:?}: {}, {}", id1, len1, len2);
+        if len1.len() != len2.len() {
+            //println!("{:?}: {}, {}", id1, len1, len2);
             diff += 1;
-            break;
+            //break;
+        } else {
+            for i in 0..len1.len() {
+
+                let seq_1 = debruijn::dna_string::DnaString::from_bytes(len1[i].as_bytes());
+                let seq_2 = debruijn::dna_string::DnaString::from_bytes(len2[i].as_bytes());
+                if seq_1.to_string() != seq_2.to_string() &&
+                    seq_1.rc().to_string() != seq_2.rc().to_string() &&
+                    seq_1.to_string() != seq_2.rc().to_string() &&
+                    seq_1.rc().to_string() != seq_2.to_string() {
+                        diff += 1;
+                        println!("{:?}", seq_1.to_string());
+                        println!("{:?}", seq_2.to_string());
+                        break;
+                    }
+            }
         }
     }
 
-    info!("All Done!! Diff = {}", diff);
+    info!("All Done!! Diff = {}/{}", diff, p1_len);
     Ok(())
 }

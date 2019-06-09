@@ -243,16 +243,15 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
         dbg_index = NoKeyBoomHashMap::new_with_mphf(mphf, node_and_offsets);
     }
 
-    let mut wtr = OpenOptions::new().append(true).open(gfa_file)?;
-
     let mut path: String = "".to_string();
+    let mut wtr = OpenOptions::new().append(true).open(gfa_file)?;
     for (seq_index, seq) in seqs.into_iter().enumerate() {
-        let mut seq_len = seq.len();
+        let mut coverage: usize = 0;
+        let mut num_nodes: usize = 0;
         let mut kmer_it = seq.iter_kmers::<KmerType>();
 
         path.clear();
-        let mut coverage: usize = 0;
-        let mut num_nodes: usize = 0;
+        let mut old_kmer = None;
         while let Some(kmer) = kmer_it.next() {
             let mut is_kmer_rc = false;
             let kmer_rc = kmer.rc();
@@ -298,37 +297,40 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
             };
 
             num_nodes += 1;
-            coverage += node_len;
+            match num_nodes {
+                1 => coverage += node_len,
+                _ => coverage += node_len - KmerType::k() + 1,
+            }
+
             if path.is_empty() {
                 path = format!("{}{}", node.node_id, node_sign);
             } else {
                 path = format!("{},{}{}", path, node.node_id, node_sign);
             }
-            if node_len >= seq_len { break; }
 
-            seq_len -= node_len;
             let mut skip_kmers = node_len - KmerType::k() ;
-
             while skip_kmers > 0 {
                 kmer_it.next();
                 skip_kmers -= 1;
             }
+
+            if old_kmer.is_some() && old_kmer == Some(kmer) { break; }
+            old_kmer = Some(kmer);
+            assert!(coverage <= seq.len(), "{} {} {} {} {:?}, {:?}, {:?} {:?}",
+                    num_nodes, coverage, seq.len(),
+                    node_len - KmerType::k() + 1, kmer,
+                    node, node.sequence(), seq);
         } // end-while
 
         let seq_name = seq_names.get(seq_index).unwrap();
-        coverage -= (num_nodes - 1) * (KmerType::k() - 1);
         assert!(coverage == seq.len(),
-                "didn't cover full transcript {}: len:{} covered: {}",
+                "didn't cover full transcript {}: len: {} covered: {}",
                 seq_name, seq.len(), coverage);
 
         writeln!(wtr, "P\t{}\t{}",
                  seq_name,
                  path
         )?;
-        //    println!("{:?}, {:?}, {}", node,
-        //             eq_classes[*node.data() as usize],
-        //             offset
-        //    );
     }// end- seq for
     info!("Done writing Path");
 

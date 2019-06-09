@@ -40,14 +40,19 @@ pub fn get_data(gfa_file: &str)
 pub fn get_lens(u1: &HashMap<usize, usize>, path_seq: &String)
                 -> usize {
     let mut total_len = 0;
+    let mut adjustment = 0;
     for path in path_seq.trim().split(",") {
         let rid: usize = path
             .trim_matches(|c| c == '-' || c == '+')
             .parse::<usize>()
             .unwrap();
 
+        adjustment += 1;
         total_len += u1.get(&rid).unwrap();
     }
+
+    adjustment -= 1;
+    total_len -= 30 * (adjustment);
 
     total_len
 }
@@ -75,6 +80,7 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
         if len1 != len2 {
             println!("{:?}: {}, {}", id1, len1, len2);
             diff += 1;
+            break;
         }
     }
 

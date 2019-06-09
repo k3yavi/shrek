@@ -31,10 +31,10 @@ mod utils;
 const MIN_KMERS: usize = 1;
 const MAX_WORKER: usize = 10;
 pub const MEM_SIZE: usize = 1;
-pub const STRANDED: bool = true;
+pub const STRANDED: bool = false;
 const U32_MAX: u32 = u32::max_value();
 pub const REPORT_ALL_KMER: bool = false;
-const MIN_SHARD_SEQUENCES: usize = 31;
+const MIN_SHARD_SEQUENCES: usize = 0;
 
 type KmerType = kmer::Kmer31;
 type PmerType = debruijn::kmer::Kmer6;
@@ -62,7 +62,8 @@ fn group_by_slices<T, K: PartialEq, F: Fn(&T) -> K>(
             slice_start = i;
         }
     }
-    if slice_start > 0 {
+
+    if slice_start > 0 || (data.len() - slice_start) > min_size {
         result.push(&data[slice_start..]);
     }
     result
@@ -106,7 +107,7 @@ fn partition_contigs<'a, K: Kmer>(
     let mut bucket_slices = Vec::new();
 
     if contig.len() >= K::k() {
-        let msps = debruijn::msp::simple_scan::<_, PmerType>(K::k(), contig, &PERM, false);
+        let msps = debruijn::msp::simple_scan::<_, PmerType>(K::k(), contig, &PERM, !STRANDED);
         for msp in msps {
             let bucket_id = msp.bucket();
             let slice = contig.slice(msp.start(), msp.end());
@@ -199,7 +200,7 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
     Ok(())
 }
 
-pub fn write_gfa( eq_classes: Vec<Vec<u32>>,
+pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
                   dbg: DebruijnGraph<KmerType, u32>,
                   gfa_file: &str,
                   seqs: Vec<DnaString>,
@@ -250,18 +251,59 @@ pub fn write_gfa( eq_classes: Vec<Vec<u32>>,
         let mut kmer_it = seq.iter_kmers::<KmerType>();
 
         path.clear();
+        let mut coverage: usize = 0;
+        let mut num_nodes: usize = 0;
         while let Some(kmer) = kmer_it.next() {
-            let (nid, offset) = dbg_index.get(&kmer).unwrap();
-            assert!(*offset == 0, "{}", *offset);
+            let mut is_kmer_rc = false;
+            let kmer_rc = kmer.rc();
 
-            if path.is_empty() {
-                path = format!("{}+", nid);
-            } else {
-                path = format!("{},{}+", path, nid);
+            let fwd_idx = match dbg_index.get(&kmer) {
+                Some((nid, offset)) => {
+                    let node = dbg.get_node(*nid as usize);
+                    let seq = node
+                        .sequence()
+                        .get_kmer(*offset as usize);
+                    if kmer == seq { Some(node) } else { None }
+                },
+                None => None,
+            };
+
+            let rev_idx = match dbg_index.get(&kmer_rc) {
+                Some((nid, offset)) => {
+                    let node = dbg.get_node(*nid as usize);
+                    let seq = node
+                        .sequence()
+                        .rc()
+                        .get_kmer(*offset as usize);
+                    if kmer_rc == seq { is_kmer_rc = true; Some(node) } else { None }
+                },
+                None => None,
+            };
+
+            if fwd_idx.is_some() && rev_idx.is_some() {
+                println!("fwd: {:?} {:?}", fwd_idx, kmer);
+                println!("rev: {:?} {:?}", rev_idx, kmer_rc);
+                panic!("found both fwd and rev kmer");
             }
 
-            let node = dbg.get_node(*nid as usize);
+            if fwd_idx.is_none() && rev_idx.is_none() {
+                panic!("Neither fwd nor reverse kmer found");
+            }
+
+            let node = if fwd_idx.is_some() { fwd_idx.unwrap() } else {rev_idx.unwrap()};
             let node_len = node.len();
+            let node_sign = match is_kmer_rc {
+                true => "-",
+                false => "+",
+            };
+
+            num_nodes += 1;
+            coverage += node_len;
+            if path.is_empty() {
+                path = format!("{}{}", node.node_id, node_sign);
+            } else {
+                path = format!("{},{}{}", path, node.node_id, node_sign);
+            }
             if node_len >= seq_len { break; }
 
             seq_len -= node_len;
@@ -273,8 +315,14 @@ pub fn write_gfa( eq_classes: Vec<Vec<u32>>,
             }
         } // end-while
 
+        let seq_name = seq_names.get(seq_index).unwrap();
+        coverage -= (num_nodes - 1) * (KmerType::k() - 1);
+        assert!(coverage == seq.len(),
+                "didn't cover full transcript {}: len:{} covered: {}",
+                seq_name, seq.len(), coverage);
+
         writeln!(wtr, "P\t{}\t{}",
-                 seq_names.get(seq_index).unwrap(),
+                 seq_name,
                  path
         )?;
         //    println!("{:?}, {:?}, {}", node,

@@ -72,14 +72,14 @@ fn group_by_slices<T, K: PartialEq, F: Fn(&T) -> K>(
 fn assemble_shard<K: Kmer>(
     shard_data: &[(u16, u32, DnaStringSlice, Exts)],
     summarizer: &Arc<CountFilterEqClass<u32>>,
-) -> BaseGraph<K, EqClassIdType> {
+) -> BaseGraph<K, (EqClassIdType, u8)> {
     let filter_input: Vec<_> = shard_data
         .into_iter()
         .cloned()
         .map(|(_, seqid, string, exts)| (string, exts, seqid))
         .collect();
 
-    let (phf, _): (BoomHashMap2<K, Exts, EqClassIdType>, _) = filter_kmers(
+    let (phf, _): (BoomHashMap2<K, Exts, (EqClassIdType, u8)>, _) = filter_kmers(
         &filter_input,
         summarizer,
         STRANDED,
@@ -87,12 +87,14 @@ fn assemble_shard<K: Kmer>(
         MEM_SIZE,
     );
 
+    println!("printing filters");
+    println!("{:?}", phf);
     compress_kmers_with_hash(STRANDED, ScmapCompress::new(), &phf)
 }
 
 fn merge_shard_dbgs<K: Kmer + Sync + Send>(
-    uncompressed_dbgs: Vec<BaseGraph<K, EqClassIdType>>,
-) -> DebruijnGraph<K, EqClassIdType> {
+    uncompressed_dbgs: Vec<BaseGraph<K, (EqClassIdType, u8)>>,
+) -> DebruijnGraph<K, (EqClassIdType, u8)> {
     let combined_graph = BaseGraph::combine(uncompressed_dbgs.into_iter()).finish();
     compress_graph(STRANDED, ScmapCompress::new(), combined_graph, None)
 }
@@ -186,7 +188,7 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
         }).collect_into_vec(&mut shard_dbgs);
 
     println!();
-
+    println!("{:?}", shard_dbgs);
     info!("Done separate de Bruijn graph construction");
     info!("Starting merging disjoint graphs");
     let dbg = merge_shard_dbgs(shard_dbgs);
@@ -201,7 +203,7 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
 }
 
 pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
-                  dbg: DebruijnGraph<KmerType, u32>,
+                  dbg: DebruijnGraph<KmerType, (u32, u8)>,
                   gfa_file: &str,
                   seqs: Vec<DnaString>,
                   seq_names: Vec<String>)
@@ -323,11 +325,11 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
         } // end-while
 
         let seq_name = seq_names.get(seq_index).unwrap();
-        assert!(coverage == seq.len(),
-                "didn't cover full transcript {}: len: {} covered: {}",
-                seq_name, seq.len(), coverage);
+        //assert!(coverage == seq.len(),
+        //        "didn't cover full transcript {}: len: {} covered: {}",
+        //        seq_name, seq.len(), coverage);
 
-        writeln!(wtr, "P\t{}\t{}",
+        writeln!(wtr, "P\t{}\t{}\t*",
                  seq_name,
                  path
         )?;

@@ -75,7 +75,7 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
         let len2 = get_lens(&u2, &path2);
 
         if len1.len() != len2.len() {
-            //println!("{:?}: {}, {}", id1, len1, len2);
+            println!("{:?}: {:?}, {:?}", id1, len1, len2);
             diff += 1;
             //break;
         } else {

@@ -87,8 +87,8 @@ fn assemble_shard<K: Kmer>(
         MEM_SIZE,
     );
 
-    println!("printing filters");
-    println!("{:?}", phf);
+    //println!("printing filters");
+    //println!("{:?}", phf);
     compress_kmers_with_hash(STRANDED, ScmapCompress::new(), &phf)
 }
 
@@ -188,7 +188,7 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
         }).collect_into_vec(&mut shard_dbgs);
 
     println!();
-    println!("{:?}", shard_dbgs);
+    //println!("{:?}", shard_dbgs);
     info!("Done separate de Bruijn graph construction");
     info!("Starting merging disjoint graphs");
     let dbg = merge_shard_dbgs(shard_dbgs);

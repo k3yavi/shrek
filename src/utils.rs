@@ -41,18 +41,22 @@ pub fn get_data(gfa_file: &str)
 }
 
 pub fn get_lens(u1: &HashMap<usize, String>, path_seq: &String)
-                -> Vec<String> {
-    let mut total_len = Vec::new();
+                -> (Vec<String>, usize) {
+    let mut seqs = Vec::new();
+    let mut total_length = 31;
     for path in path_seq.trim().split(",") {
         let rid: usize = path
             .trim_matches(|c| c == '-' || c == '+')
             .parse::<usize>()
             .unwrap();
 
-        total_len.push( u1.get(&rid).unwrap().clone() );
+        let seq = u1.get(&rid).unwrap();
+        let seq_len = seq.len() - 30;
+        seqs.push( seq.clone() );
+        total_length += if seq_len>0  { seq_len } else { panic!() };
     }
 
-    total_len
+    (seqs, total_length)
 }
 
 pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
@@ -68,45 +72,43 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
     info!("Parsing {}", gfa2_file);
     let (u2, p2) = get_data(gfa2_file);
 
-    //assert!(u1.len() == u2.len(), "{:?}, {:?}", u1.len(), u2.len());
+    info!("{:?}, {:?}", u1.len(), u2.len());
+
     let mut diff = 0;
+    let mut in_diff = 0;
     let p1_len = p1.len();
     for (id1, path1) in p1 {
-        let len1 = get_lens(&u1, &path1);
+        let (len1, total_length1) = get_lens(&u1, &path1);
 
         let path2 = p2.get(&id1).unwrap();
-        let len2 = get_lens(&u2, &path2);
-
-        let mut total_length1: usize = 0;
-        let mut total_length2: usize = 0;
-        for unitig in len1 { total_length1 += unitig.len(); }
-        for unitig in len2 { total_length2 += unitig.len(); }
+        let (len2, total_length2) = get_lens(&u2, &path2);
 
         if total_length1 != total_length2 {
             diff += 1;
             println!("{:?}, {:?} {:?}", id1, total_length1, total_length2);
         }
-        //if len1.len() != len2.len() {
-        //    println!("Overall: {:?} \n {:?} \n {:?}", id1, len1.len(), len2.len());
-        //    //println!("Overall: {:?} \n {:?} \n {:?}", id1, len1, len2);
-        //    diff += 1;
-        //    //break;
-        //} else {
-        //    for i in 0..len1.len() {
-        //        let seq1 = DnaString::from_acgt_bytes_hashn(len1[i].as_bytes(), &[i as u8]);
-        //        let seq2 = DnaString::from_acgt_bytes_hashn(len2[i].as_bytes(), &[i as u8]);
-        //        if seq1 != seq2 &&
-        //            seq1.rc() != seq2.rc() &&
-        //            seq1 != seq2.rc() &&
-        //            seq1.rc() != seq2 {
-        //                diff += 1;
-        //                println!("{:?} {}", seq1, len1[i].len());
-        //                println!("{:?} {}", seq2.rc(), len2[i].len());
-        //        }
-        //    }
-        //}
+
+        if len1.len() != len2.len() {
+            println!("Overall: {:?} \n {:?} \n {:?}", id1, len1.len(), len2.len());
+            //println!("Overall: {:?} \n {:?} \n {:?}", id1, len1, len2);
+            in_diff += 1;
+            //break;
+        } else {
+            for i in 0..len1.len() {
+                let seq1 = DnaString::from_acgt_bytes_hashn(len1[i].as_bytes(), &[i as u8]);
+                let seq2 = DnaString::from_acgt_bytes_hashn(len2[i].as_bytes(), &[i as u8]);
+                if seq1 != seq2 &&
+                    seq1.rc() != seq2.rc() &&
+                    seq1 != seq2.rc() &&
+                    seq1.rc() != seq2 {
+                        in_diff += 1;
+                        println!("{:?} {}", seq1, len1[i].len());
+                        println!("{:?} {}", seq2.rc(), len2[i].len());
+                }
+            }
+        }
     }
 
-    info!("All Done!! Diff = {}/{}", diff, p1_len);
+    info!("All Done!! Num Diff = {}/{}, In Diff = {}/{}", diff, p1_len, in_diff, p1_len);
     Ok(())
 }

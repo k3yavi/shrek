@@ -207,9 +207,13 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
                   gfa_file: &str,
                   seqs: Vec<DnaString>,
                   seq_names: Vec<String>)
-                  -> Result<(), io::Error> {
+                   -> Result<(), io::Error> {
+    fn unitig_len(node: &Node<'_, KmerType, (u32, u8)>) -> String {
+        format!("LN:{}", node.len())
+    }
+
     // writing S and L flags into the gfa
-    dbg.to_gfa(gfa_file)?;
+    dbg.to_gfa_with_tags(gfa_file, &unitig_len)?;
     info!("GFA: S and L tag written !");
 
     let dbg_index;

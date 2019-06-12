@@ -6,6 +6,8 @@ use std::io::{BufRead, BufReader};
 use debruijn::Mer;
 use clap::{ArgMatches};
 
+use debruijn::dna_string::{DnaString};
+
 pub fn get_data(gfa_file: &str)
                 -> (HashMap<usize, String>, HashMap<String, String>){
     let f = BufReader::new(File::open(gfa_file).unwrap());
@@ -66,6 +68,7 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
     info!("Parsing {}", gfa2_file);
     let (u2, p2) = get_data(gfa2_file);
 
+    assert!(u1.len() == u2.len(), "{:?}, {:?}", u1.len(), u2.len());
     let mut diff = 0;
     let p1_len = p1.len();
     for (id1, path1) in p1 {
@@ -75,23 +78,24 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
         let len2 = get_lens(&u2, &path2);
 
         if len1.len() != len2.len() {
-            println!("{:?}: {:?}, {:?}", id1, len1, len2);
+            println!("Overall: {:?}: {:?}, {:?}", id1, len1.len(), len2.len());
             diff += 1;
             //break;
         } else {
             for i in 0..len1.len() {
 
-                let seq_1 = debruijn::dna_string::DnaString::from_bytes(len1[i].as_bytes());
-                let seq_2 = debruijn::dna_string::DnaString::from_bytes(len2[i].as_bytes());
-                if seq_1.to_string() != seq_2.to_string() &&
-                    seq_1.rc().to_string() != seq_2.rc().to_string() &&
-                    seq_1.to_string() != seq_2.rc().to_string() &&
-                    seq_1.rc().to_string() != seq_2.to_string() {
+
+                let seq1 = DnaString::from_acgt_bytes_hashn(len1[i].as_bytes(), &[i as u8]);
+                let seq2 = DnaString::from_acgt_bytes_hashn(len2[i].as_bytes(), &[i as u8]);
+                if seq1 != seq2 &&
+                    seq1.rc() != seq2.rc() &&
+                    seq1 != seq2.rc() &&
+                    seq1.rc() != seq2 {
                         diff += 1;
-                        println!("{:?}", seq_1.to_string());
-                        println!("{:?}", seq_2.to_string());
+                        println!("{:?} {}", len1[i], len1[i].len());
+                        println!("{:?} {}", len2[i], len2[i].len());
                         break;
-                    }
+                }
             }
         }
     }

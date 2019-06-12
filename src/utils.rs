@@ -83,8 +83,6 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
             //break;
         } else {
             for i in 0..len1.len() {
-
-
                 let seq1 = DnaString::from_acgt_bytes_hashn(len1[i].as_bytes(), &[i as u8]);
                 let seq2 = DnaString::from_acgt_bytes_hashn(len2[i].as_bytes(), &[i as u8]);
                 if seq1 != seq2 &&
@@ -92,9 +90,8 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
                     seq1 != seq2.rc() &&
                     seq1.rc() != seq2 {
                         diff += 1;
-                        println!("{:?} {}", len1[i], len1[i].len());
-                        println!("{:?} {}", len2[i], len2[i].len());
-                        break;
+                        println!("{:?} {}", seq1, len1[i].len());
+                        println!("{:?} {}", seq2.rc(), len2[i].len());
                 }
             }
         }

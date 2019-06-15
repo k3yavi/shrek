@@ -43,7 +43,7 @@ pub fn get_data(gfa_file: &str)
 pub fn get_lens(u1: &HashMap<usize, String>, path_seq: &String)
                 -> (Vec<String>, usize) {
     let mut seqs = Vec::new();
-    let mut total_length = 31;
+    let mut total_length = 30;
     for path in path_seq.trim().split(",") {
         let rid: usize = path
             .trim_matches(|c| c == '-' || c == '+')
@@ -53,6 +53,7 @@ pub fn get_lens(u1: &HashMap<usize, String>, path_seq: &String)
         let seq = u1.get(&rid).unwrap();
         let seq_len = seq.len() - 30;
         seqs.push( seq.clone() );
+        //println!("{:?} {:?}", rid, seq_len);
         total_length += if seq_len>0  { seq_len } else { panic!() };
     }
 

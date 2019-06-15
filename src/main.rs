@@ -87,8 +87,8 @@ fn assemble_shard<K: Kmer>(
         MEM_SIZE,
     );
 
-    //println!("printing filters");
-    //println!("{:?}", phf);
+    println!("printing filters");
+    println!("{:?}", phf);
     compress_kmers_with_hash(STRANDED, ScmapCompress::new(), &phf)
 }
 
@@ -252,13 +252,15 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
     let mut path: String = "".to_string();
     let mut wtr = OpenOptions::new().append(true).open(gfa_file)?;
     for (seq_index, seq) in seqs.into_iter().enumerate() {
+        //println!("{:?}", seq_names.get(seq_index).unwrap());
         let mut coverage: usize = 0;
         let mut num_nodes: usize = 0;
         let mut kmer_it = seq.iter_kmers::<KmerType>();
 
+        let debug = true;
         path.clear();
-        let mut old_kmer = None;
         while let Some(kmer) = kmer_it.next() {
+            if debug { println!("kmer: {:?}", kmer); }
             let mut is_kmer_rc = false;
             let kmer_rc = kmer.rc();
 
@@ -302,11 +304,35 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
                 false => "+",
             };
 
+            let ref_seq;
             num_nodes += 1;
             match num_nodes {
-                1 => coverage += node_len,
-                _ => coverage += node_len - KmerType::k() + 1,
-            }
+                1 => {
+                    ref_seq = seq.slice(coverage, coverage+node_len);
+                    if debug { println!("{:?}, {:?}", coverage,
+                                        coverage+node_len); }
+                    coverage += node_len;
+                },
+                _ => {
+                    let offset = KmerType::k() - 1;
+                    ref_seq = seq.slice(coverage - offset, coverage + node_len - offset);
+                    if debug {
+                        println!("{:?}, {:?} {:?} {:?} {:?}",
+                                 coverage - offset,
+                                 coverage + node_len - offset,
+                                 seq.len(), ref_seq, seq);
+                    }
+                    coverage += node_len - offset;
+                },
+            };
+
+            let found_seq = node.sequence();
+            assert!(ref_seq.to_string() == found_seq.to_string() ||
+                    ref_seq.to_string() == found_seq.rc().to_string() ||
+                    ref_seq.rc().to_string() == found_seq.to_string() ||
+                    ref_seq.rc().to_string() == found_seq.rc().to_string(),
+                    "different lens {:?} {:?} {:?} {:?}",
+                    ref_seq, ref_seq.len(), found_seq.rc(), found_seq.len());
 
             if path.is_empty() {
                 path = format!("{}{}", node.node_id, node_sign);
@@ -319,24 +345,17 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
                 kmer_it.next();
                 skip_kmers -= 1;
             }
-
-            if old_kmer.is_some() && old_kmer == Some(kmer) { break; }
-            old_kmer = Some(kmer);
-            assert!(coverage <= seq.len(), "{} {} {} {} {:?}, {:?}, {:?} {:?}",
-                    num_nodes, coverage, seq.len(),
-                    node_len - KmerType::k() + 1, kmer,
-                    node, node.sequence(), seq);
         } // end-while
 
         let seq_name = seq_names.get(seq_index).unwrap();
-        //assert!(coverage == seq.len(),
-        //        "didn't cover full transcript {}: len: {} covered: {}",
-        //        seq_name, seq.len(), coverage);
-
         writeln!(wtr, "P\t{}\t{}\t*",
                  seq_name,
                  path
         )?;
+
+        assert!(coverage == seq.len(),
+                "didn't cover full transcript {}: len: {} covered: {}",
+                seq_name, seq.len(), coverage);
     }// end- seq for
     info!("Done writing Path");
 

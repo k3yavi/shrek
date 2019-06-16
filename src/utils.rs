@@ -90,7 +90,7 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
         }
 
         if len1.len() != len2.len() {
-            //println!("Overall: {:?} \n {:?} \n {:?}", id1, len1.len(), len2.len());
+            println!("Overall: {:?} \n {:?} \n {:?}", id1, len1.len(), len2.len());
             //println!("Overall: {:?} \n {:?} \n {:?}", id1, len1, len2);
             in_diff += 1;
             //break;
@@ -113,3 +113,4 @@ pub fn compare(sub_m: &ArgMatches) -> Result<(), io::Error> {
     info!("All Done!! Num Diff = {}/{}, In Diff = {}/{}", diff, p1_len, in_diff, p1_len);
     Ok(())
 }
+

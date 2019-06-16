@@ -70,13 +70,13 @@ fn group_by_slices<T, K: PartialEq, F: Fn(&T) -> K>(
 }
 
 fn assemble_shard<K: Kmer>(
-    shard_data: &[(u16, u32, DnaStringSlice, Exts)],
+    shard_data: &[(u16, u32, DnaStringSlice, Exts, u8)],
     summarizer: &Arc<CountFilterEqClass<u32>>,
 ) -> BaseGraph<K, (EqClassIdType, u8)> {
     let filter_input: Vec<_> = shard_data
         .into_iter()
         .cloned()
-        .map(|(_, seqid, string, exts)| (string, exts, seqid))
+        .map(|(_, seqid, string, exts, sentinel_id)| (string, exts, seqid, sentinel_id))
         .collect();
 
     let (phf, _): (BoomHashMap2<K, Exts, (EqClassIdType, u8)>, _) = filter_kmers(
@@ -87,8 +87,8 @@ fn assemble_shard<K: Kmer>(
         MEM_SIZE,
     );
 
-    println!("printing filters");
-    println!("{:?}", phf);
+    //println!("printing filters");
+    //println!("{:?}", phf);
     compress_kmers_with_hash(STRANDED, ScmapCompress::new(), &phf)
 }
 
@@ -102,7 +102,7 @@ fn merge_shard_dbgs<K: Kmer + Sync + Send>(
 fn partition_contigs<'a, K: Kmer>(
     contig: &'a DnaString,
     contig_id: u32,
-) -> Vec<(u16, u32, DnaStringSlice<'a>, Exts)> {
+) -> Vec<(u16, u32, DnaStringSlice<'a>, Exts, u8)> {
     // One FASTA entry possibly broken into multiple contigs
     // based on the location of `N` int he sequence.
 
@@ -110,11 +110,20 @@ fn partition_contigs<'a, K: Kmer>(
 
     if contig.len() >= K::k() {
         let msps = debruijn::msp::simple_scan::<_, PmerType>(K::k(), contig, &PERM, !STRANDED);
-        for msp in msps {
+        let num_msps = msps.len();
+        for (msp_idx, msp) in msps.into_iter().enumerate() {
             let bucket_id = msp.bucket();
             let slice = contig.slice(msp.start(), msp.end());
             let exts = Exts::from_dna_string(contig, msp.start(), msp.len());
-            bucket_slices.push((bucket_id, contig_id, slice, exts));
+
+            let mut sentinal_id = match msp_idx {
+                0 => 1,
+                _ if msp_idx == (num_msps-1) => 2,
+                _ => 0,
+            };
+            if num_msps == 1 { sentinal_id = 3; }
+
+            bucket_slices.push((bucket_id, contig_id, slice, exts, sentinal_id));
         }
     }
 
@@ -179,6 +188,7 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
     let summarizer = Arc::new(debruijn::filter::CountFilterEqClass::new(MIN_KMERS));
     let sequence_shards = group_by_slices(&buckets, |x| x.0, MIN_SHARD_SEQUENCES);
     let mut shard_dbgs = Vec::with_capacity(sequence_shards.len());
+    //println!("{:?}", sequence_shards);
 
     info!("Assembling {} shards...", sequence_shards.len());
     sequence_shards
@@ -188,7 +198,8 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
         }).collect_into_vec(&mut shard_dbgs);
 
     println!();
-    //println!("{:?}", shard_dbgs);
+    println!("{:?}", shard_dbgs);
+    //std::process::exit(0);
     info!("Done separate de Bruijn graph construction");
     info!("Starting merging disjoint graphs");
     let dbg = merge_shard_dbgs(shard_dbgs);
@@ -257,7 +268,7 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
         let mut num_nodes: usize = 0;
         let mut kmer_it = seq.iter_kmers::<KmerType>();
 
-        let debug = true;
+        let debug = false;
         path.clear();
         while let Some(kmer) = kmer_it.next() {
             if debug { println!("kmer: {:?}", kmer); }
@@ -425,3 +436,4 @@ fn main() -> io::Result<()> {
 
     Ok(())
 }
+

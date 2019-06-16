@@ -79,6 +79,7 @@ fn assemble_shard<K: Kmer>(
         .map(|(_, seqid, string, exts, sentinel_id)| (string, exts, seqid, sentinel_id))
         .collect();
 
+    println!("{:?}", filter_input);
     let (phf, _): (BoomHashMap2<K, Exts, (EqClassIdType, u8)>, _) = filter_kmers(
         &filter_input,
         summarizer,
@@ -87,8 +88,8 @@ fn assemble_shard<K: Kmer>(
         MEM_SIZE,
     );
 
-    //println!("printing filters");
-    //println!("{:?}", phf);
+    println!("printing filters");
+    println!("{:?}", phf);
     compress_kmers_with_hash(STRANDED, ScmapCompress::new(), &phf)
 }
 
@@ -127,6 +128,7 @@ fn partition_contigs<'a, K: Kmer>(
         }
     }
 
+    //println!("Bucket Slices {:?}", bucket_slices);
     bucket_slices
 }
 
@@ -188,7 +190,7 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
     let summarizer = Arc::new(debruijn::filter::CountFilterEqClass::new(MIN_KMERS));
     let sequence_shards = group_by_slices(&buckets, |x| x.0, MIN_SHARD_SEQUENCES);
     let mut shard_dbgs = Vec::with_capacity(sequence_shards.len());
-    //println!("{:?}", sequence_shards);
+    println!("{:?}", sequence_shards);
 
     info!("Assembling {} shards...", sequence_shards.len());
     sequence_shards

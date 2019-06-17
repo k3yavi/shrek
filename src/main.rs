@@ -79,7 +79,7 @@ fn assemble_shard<K: Kmer>(
         .map(|(_, seqid, string, exts, sentinel_id)| (string, exts, seqid, sentinel_id))
         .collect();
 
-    println!("{:?}", filter_input);
+    //println!("{:?}", filter_input);
     let (phf, _): (BoomHashMap2<K, Exts, (EqClassIdType, u8)>, _) = filter_kmers(
         &filter_input,
         summarizer,
@@ -88,8 +88,8 @@ fn assemble_shard<K: Kmer>(
         MEM_SIZE,
     );
 
-    println!("printing filters");
-    println!("{:?}", phf);
+    //println!("printing filters");
+    //println!("{:?}", phf);
     compress_kmers_with_hash(STRANDED, ScmapCompress::new(), &phf)
 }
 
@@ -190,7 +190,7 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
     let summarizer = Arc::new(debruijn::filter::CountFilterEqClass::new(MIN_KMERS));
     let sequence_shards = group_by_slices(&buckets, |x| x.0, MIN_SHARD_SEQUENCES);
     let mut shard_dbgs = Vec::with_capacity(sequence_shards.len());
-    println!("{:?}", sequence_shards);
+    //println!("{:?}", sequence_shards);
 
     info!("Assembling {} shards...", sequence_shards.len());
     sequence_shards
@@ -200,13 +200,14 @@ fn generate(sub_m: &ArgMatches) -> Result<(), io::Error> {
         }).collect_into_vec(&mut shard_dbgs);
 
     println!();
-    println!("{:?}", shard_dbgs);
+    //println!("{:?}", shard_dbgs);
     //std::process::exit(0);
     info!("Done separate de Bruijn graph construction");
     info!("Starting merging disjoint graphs");
     let dbg = merge_shard_dbgs(shard_dbgs);
     let eq_classes = summarizer.get_eq_classes();
 
+    //println!("{:?} {:?}", dbg, eq_classes);
     info!("Graph merge complete");
     info!("Writing GFA !");
     write_gfa(eq_classes, dbg, gfa_file, seqs, seq_names)
@@ -258,7 +259,7 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
             }
         }
 
-        info!("Done creating index");
+        info!("Done creating index found {} node", dbg.len());
         dbg_index = NoKeyBoomHashMap::new_with_mphf(mphf, node_and_offsets);
     }
 
@@ -317,35 +318,35 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
                 false => "+",
             };
 
-            let ref_seq;
+            //let ref_seq;
             num_nodes += 1;
             match num_nodes {
                 1 => {
-                    ref_seq = seq.slice(coverage, coverage+node_len);
+                    //ref_seq = seq.slice(coverage, coverage+node_len);
                     if debug { println!("{:?}, {:?}", coverage,
                                         coverage+node_len); }
                     coverage += node_len;
                 },
                 _ => {
                     let offset = KmerType::k() - 1;
-                    ref_seq = seq.slice(coverage - offset, coverage + node_len - offset);
-                    if debug {
-                        println!("{:?}, {:?} {:?} {:?} {:?}",
-                                 coverage - offset,
-                                 coverage + node_len - offset,
-                                 seq.len(), ref_seq, seq);
-                    }
+                    //ref_seq = seq.slice(coverage - offset, coverage + node_len - offset);
+                    //if debug {
+                    //    println!("{:?}, {:?} {:?} {:?} {:?}",
+                    //             coverage - offset,
+                    //             coverage + node_len - offset,
+                    //             seq.len(), ref_seq, seq);
+                    //}
                     coverage += node_len - offset;
                 },
             };
 
-            let found_seq = node.sequence();
-            assert!(ref_seq.to_string() == found_seq.to_string() ||
-                    ref_seq.to_string() == found_seq.rc().to_string() ||
-                    ref_seq.rc().to_string() == found_seq.to_string() ||
-                    ref_seq.rc().to_string() == found_seq.rc().to_string(),
-                    "different lens {:?} {:?} {:?} {:?}",
-                    ref_seq, ref_seq.len(), found_seq.rc(), found_seq.len());
+            //let found_seq = node.sequence();
+            //assert!(ref_seq.to_string() == found_seq.to_string() ||
+            //        ref_seq.to_string() == found_seq.rc().to_string() ||
+            //        ref_seq.rc().to_string() == found_seq.to_string() ||
+            //        ref_seq.rc().to_string() == found_seq.rc().to_string(),
+            //        "different sequences {:?} {:?} {:?} {:?}",
+            //        ref_seq, ref_seq.len(), found_seq, found_seq.len());
 
             if path.is_empty() {
                 path = format!("{}{}", node.node_id, node_sign);
@@ -366,9 +367,9 @@ pub fn write_gfa( _eq_classes: Vec<Vec<u32>>,
                  path
         )?;
 
-        assert!(coverage == seq.len(),
-                "didn't cover full transcript {}: len: {} covered: {}",
-                seq_name, seq.len(), coverage);
+        //assert!(coverage == seq.len(),
+        //        "didn't cover full transcript {}: len: {} covered: {}",
+        //        seq_name, seq.len(), coverage);
     }// end- seq for
     info!("Done writing Path");
 
